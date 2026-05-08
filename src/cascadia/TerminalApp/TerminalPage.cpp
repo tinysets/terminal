@@ -10,6 +10,7 @@
 #include <til/unicode.h>
 #include <Utils.h>
 #include <TerminalCore/ControlKeyStates.hpp>
+#include <winrt/Windows.Storage.h>
 
 #include "App.h"
 #include "DebugTapConnection.h"
@@ -50,6 +51,61 @@ using namespace ::Microsoft::Terminal::Core;
 using namespace std::chrono_literals;
 
 #define HOOKUP_ACTION(action) _actionDispatch->action({ this, &TerminalPage::_Handle##action });
+
+namespace
+{
+    void _LogTabShadowDebug(const std::wstring_view message)
+    {
+        std::wstring line{ L"[TabShadow] " };
+        line.append(message);
+        line.append(L"\r\n");
+        OutputDebugStringW(line.c_str());
+
+        const auto localFolder = winrt::Windows::Storage::ApplicationData::Current().LocalFolder();
+        const auto logPath = std::filesystem::path{ localFolder.Path().c_str() } / L"wt-tab-shadow-debug.log";
+
+        const auto requiredSize = WideCharToMultiByte(CP_UTF8, 0, line.data(), gsl::narrow_cast<int>(line.size()), nullptr, 0, nullptr, nullptr);
+        if (requiredSize <= 0)
+        {
+            return;
+        }
+
+        std::string utf8Line;
+        utf8Line.resize(requiredSize);
+        WideCharToMultiByte(CP_UTF8, 0, line.data(), gsl::narrow_cast<int>(line.size()), utf8Line.data(), requiredSize, nullptr, nullptr);
+
+        wil::unique_hfile file{ CreateFileW(logPath.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+        if (file)
+        {
+            DWORD bytesWritten{};
+            WriteFile(file.get(), utf8Line.data(), gsl::narrow_cast<DWORD>(utf8Line.size()), &bytesWritten, nullptr);
+        }
+    }
+
+    winrt::TerminalApp::TabHeaderControl _FindTabShadowHeaderControl(const winrt::Windows::UI::Xaml::DependencyObject& root)
+    {
+        if (!root)
+        {
+            return nullptr;
+        }
+
+        if (const auto headerControl = root.try_as<winrt::TerminalApp::TabHeaderControl>())
+        {
+            return headerControl;
+        }
+
+        const auto childCount = winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetChildrenCount(root);
+        for (int32_t i = 0; i < childCount; ++i)
+        {
+            if (const auto headerControl = _FindTabShadowHeaderControl(winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetChild(root, i)))
+            {
+                return headerControl;
+            }
+        }
+
+        return nullptr;
+    }
+}
 
 namespace winrt
 {
@@ -331,6 +387,10 @@ namespace winrt::TerminalApp::implementation
         _HookupKeyBindings(_settings.ActionMap());
 
         _tabContent = this->TabContent();
+        _tabShadowList = this->TabShadowList();
+        _tabShadowList.ItemsSource(_tabs);
+        _tabShadowList.SelectionChanged({ this, &TerminalPage::_OnTabShadowListSelectionChanged });
+        _LogTabShadowDebug(L"TerminalPage Create initialized TabShadowList");
         _tabRow = this->TabRow();
         _tabView = _tabRow.TabView();
         _rearranging = false;
@@ -457,6 +517,243 @@ namespace winrt::TerminalApp::implementation
     Windows::UI::Xaml::Automation::Peers::AutomationPeer TerminalPage::OnCreateAutomationPeer()
     {
         return Automation::Peers::FrameworkElementAutomationPeer(*this);
+    }
+
+    void TerminalPage::_OnTabShadowListSelectionChanged(const IInspectable& sender, const SelectionChangedEventArgs& /*eventArgs*/)
+    {
+        if (_syncingTabShadowListSelection || _removing || _rearranging)
+        {
+            return;
+        }
+
+        const auto tabShadowList = sender.try_as<ListView>();
+        if (!tabShadowList || !_tabView)
+        {
+            return;
+        }
+
+        const auto selectedIndex = tabShadowList.SelectedIndex();
+        if (selectedIndex < 0 || selectedIndex >= gsl::narrow_cast<int32_t>(_tabs.Size()))
+        {
+            return;
+        }
+
+        const auto tab = _tabs.GetAt(selectedIndex);
+        if (tab)
+        {
+            _tabView.SelectedItem(tab.TabViewItem());
+        }
+    }
+
+    void TerminalPage::_OnTabShadowListCloseButtonClick(const IInspectable& sender, const RoutedEventArgs& /*eventArgs*/)
+    {
+        const auto button = sender.try_as<Button>();
+        if (!button)
+        {
+            return;
+        }
+
+        const auto tab = button.Tag().try_as<TerminalApp::Tab>();
+        if (tab)
+        {
+            _HandleCloseTabRequested(tab);
+        }
+    }
+
+    void TerminalPage::_OnTabShadowListItemContextRequested(const UIElement& sender, const winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs& eventArgs)
+    {
+        std::wstring message{ L"Item ContextRequested" };
+        const auto element = sender.try_as<FrameworkElement>();
+        auto tab = TerminalApp::Tab{ nullptr };
+        if (element)
+        {
+            message.append(L" actualWidth=");
+            message.append(std::to_wstring(element.ActualWidth()));
+            message.append(L" actualHeight=");
+            message.append(std::to_wstring(element.ActualHeight()));
+
+            tab = element.Tag().try_as<TerminalApp::Tab>();
+            if (tab)
+            {
+                message.append(L" tabTitle=");
+                message.append(tab.Title().c_str());
+            }
+            else
+            {
+                message.append(L" tab=null");
+            }
+        }
+
+        winrt::Windows::Foundation::Point position{};
+        if (_tabShadowList && eventArgs.TryGetPosition(_tabShadowList, position))
+        {
+            message.append(L" listX=");
+            message.append(std::to_wstring(position.X));
+            message.append(L" listY=");
+            message.append(std::to_wstring(position.Y));
+        }
+
+        _LogTabShadowDebug(message);
+
+        if (!element)
+        {
+            return;
+        }
+
+        if (tab)
+        {
+            const auto shadowHeaderControl = _FindTabShadowHeaderControl(element);
+            _LogTabShadowDebug(shadowHeaderControl ? L"ContextRequested found shadow header for pending rename" : L"ContextRequested did not find shadow header for pending rename");
+            if (const auto tabImpl = _GetTabImpl(tab))
+            {
+                tabImpl->SetPendingRenameHeaderControl(shadowHeaderControl);
+            }
+
+            if (_tabView)
+            {
+                _tabView.SelectedItem(tab.TabViewItem());
+            }
+
+            if (const auto flyout = tab.TabViewItem().ContextFlyout())
+            {
+                const auto closeToken = std::make_shared<winrt::event_token>();
+                const auto weakThis = get_weak();
+                *closeToken = flyout.Closed([weakThis, tab, shadowHeaderControl, flyout, closeToken](auto&&, auto&&) {
+                    if (auto page{ weakThis.get() })
+                    {
+                        page->Dispatcher().RunAsync(CoreDispatcherPriority::Low, [weakThis, tab, shadowHeaderControl]() {
+                            if (auto page{ weakThis.get() })
+                            {
+                                if (const auto tabImpl = page->_GetTabImpl(tab))
+                                {
+                                    tabImpl->ClearPendingRenameHeaderControl(shadowHeaderControl);
+                                }
+                            }
+                        });
+                    }
+                    flyout.Closed(*closeToken);
+                });
+                flyout.ShowAt(element);
+                eventArgs.Handled(true);
+            }
+        }
+    }
+
+    void TerminalPage::_OnTabShadowHeaderLoaded(const IInspectable& sender, const RoutedEventArgs& /*eventArgs*/)
+    {
+        const auto headerControl = sender.try_as<TerminalApp::TabHeaderControl>();
+        if (!headerControl)
+        {
+            return;
+        }
+
+        const auto key = reinterpret_cast<uintptr_t>(winrt::get_abi(headerControl));
+        if (_tabShadowHeaderRevokers.find(key) != _tabShadowHeaderRevokers.end())
+        {
+            return;
+        }
+
+        auto weakThis = get_weak();
+        TabShadowHeaderRevokers revokers;
+        revokers.Header = headerControl;
+        revokers.TitleChangeRequested = headerControl.TitleChangeRequested(winrt::auto_revoke, [weakThis, headerControl](auto&& title) {
+            if (auto page{ weakThis.get() })
+            {
+                if (const auto tab = headerControl.Tag().try_as<TerminalApp::Tab>())
+                {
+                    if (const auto tabImpl = page->_GetTabImpl(tab))
+                    {
+                        tabImpl->SetTabText(title);
+                    }
+                }
+            }
+        });
+        revokers.RenameEnded = headerControl.RenameEnded(winrt::auto_revoke, [weakThis](auto&&, auto&&) {
+            if (auto page{ weakThis.get() })
+            {
+                page->_FocusActiveControl(nullptr, nullptr);
+            }
+        });
+
+        _tabShadowHeaderRevokers.emplace(key, std::move(revokers));
+    }
+
+    void TerminalPage::_OnTabShadowHeaderUnloaded(const IInspectable& sender, const RoutedEventArgs& /*eventArgs*/)
+    {
+        const auto headerControl = sender.try_as<TerminalApp::TabHeaderControl>();
+        if (!headerControl)
+        {
+            return;
+        }
+
+        const auto key = reinterpret_cast<uintptr_t>(winrt::get_abi(headerControl));
+        _tabShadowHeaderRevokers.erase(key);
+    }
+
+    void TerminalPage::_OnTabShadowListContainerContentChanging(const ListViewBase& /*sender*/, const ContainerContentChangingEventArgs& eventArgs)
+    {
+        const auto itemContainer = eventArgs.ItemContainer();
+        if (!itemContainer)
+        {
+            return;
+        }
+
+        if (eventArgs.InRecycleQueue())
+        {
+            itemContainer.Tag(nullptr);
+            itemContainer.DataContext(nullptr);
+            return;
+        }
+
+        if (const auto tab = eventArgs.Item().try_as<TerminalApp::Tab>())
+        {
+            itemContainer.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+            itemContainer.MinHeight(32);
+            itemContainer.Padding(Thickness{ 0, 0, 0, 0 });
+            itemContainer.Tag(tab);
+            itemContainer.DataContext(tab);
+            std::wstring message{ L"ContainerContentChanging set container flyout tabTitle=" };
+            message.append(tab.Title().c_str());
+            message.append(L" containerWidth=");
+            message.append(std::to_wstring(itemContainer.ActualWidth()));
+            message.append(L" containerHeight=");
+            message.append(std::to_wstring(itemContainer.ActualHeight()));
+            _LogTabShadowDebug(message);
+        }
+    }
+
+    void TerminalPage::_SyncTabShadowListSelection()
+    {
+        if (!_tabShadowList || !_tabView)
+        {
+            return;
+        }
+
+        auto selectedIndex = -1;
+        uint32_t tabIndex = 0;
+        if (const auto selectedItem = _tabView.SelectedItem())
+        {
+            if (_tabView.TabItems().IndexOf(selectedItem, tabIndex))
+            {
+                selectedIndex = gsl::narrow_cast<int32_t>(tabIndex);
+            }
+        }
+
+        if (_tabShadowList.SelectedIndex() == selectedIndex)
+        {
+            return;
+        }
+
+        _syncingTabShadowListSelection = true;
+        auto resetSyncing = wil::scope_exit([&]() noexcept {
+            _syncingTabShadowListSelection = false;
+        });
+
+        _tabShadowList.SelectedIndex(selectedIndex);
+        if (selectedIndex >= 0 && selectedIndex < gsl::narrow_cast<int32_t>(_tabs.Size()))
+        {
+            _tabShadowList.ScrollIntoView(_tabs.GetAt(selectedIndex));
+        }
     }
 
     // Method Description:

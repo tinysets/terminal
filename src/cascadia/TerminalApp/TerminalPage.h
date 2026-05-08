@@ -4,6 +4,7 @@
 #pragma once
 
 #include <ThrottledFunc.h>
+#include <unordered_map>
 
 #include "TerminalPage.g.h"
 #include "Tab.h"
@@ -218,6 +219,7 @@ namespace winrt::TerminalApp::implementation
         Microsoft::UI::Xaml::Controls::TabView _tabView{ nullptr };
         TerminalApp::TabRowControl _tabRow{ nullptr };
         Windows::UI::Xaml::Controls::Grid _tabContent{ nullptr };
+        Windows::UI::Xaml::Controls::ListView _tabShadowList{ nullptr };
         Microsoft::UI::Xaml::Controls::SplitButton _newTabButton{ nullptr };
         winrt::TerminalApp::ColorPickupFlyout _tabColorPicker{ nullptr };
 
@@ -234,6 +236,7 @@ namespace winrt::TerminalApp::implementation
         bool _isInFocusMode{ false };
         bool _isFullscreen{ false };
         bool _isMaximized{ false };
+        bool _syncingTabShadowListSelection{ false };
         bool _isAlwaysOnTop{ false };
         bool _showTabsFullscreen{ false };
 
@@ -243,6 +246,14 @@ namespace winrt::TerminalApp::implementation
         std::optional<int> _rearrangeFrom{};
         std::optional<int> _rearrangeTo{};
         bool _removing{ false };
+
+        struct TabShadowHeaderRevokers
+        {
+            TerminalApp::TabHeaderControl Header{ nullptr };
+            TerminalApp::TabHeaderControl::TitleChangeRequested_revoker TitleChangeRequested;
+            TerminalApp::TabHeaderControl::RenameEnded_revoker RenameEnded;
+        };
+        std::unordered_map<uintptr_t, TabShadowHeaderRevokers> _tabShadowHeaderRevokers;
 
         bool _activated{ false };
         bool _visible{ true };
@@ -540,6 +551,13 @@ namespace winrt::TerminalApp::implementation
 
         void _WindowSizeChanged(const IInspectable sender, const winrt::Microsoft::Terminal::Control::WindowSizeChangedEventArgs args);
         void _windowPropertyChanged(const IInspectable& sender, const winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs& args);
+        void _OnTabShadowListSelectionChanged(const IInspectable& sender, const Windows::UI::Xaml::Controls::SelectionChangedEventArgs& eventArgs);
+        void _OnTabShadowListCloseButtonClick(const IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& eventArgs);
+        void _OnTabShadowListItemContextRequested(const Windows::UI::Xaml::UIElement& sender, const Windows::UI::Xaml::Input::ContextRequestedEventArgs& eventArgs);
+        void _OnTabShadowHeaderLoaded(const IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& eventArgs);
+        void _OnTabShadowHeaderUnloaded(const IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& eventArgs);
+        void _OnTabShadowListContainerContentChanging(const Windows::UI::Xaml::Controls::ListViewBase& sender, const Windows::UI::Xaml::Controls::ContainerContentChangingEventArgs& eventArgs);
+        void _SyncTabShadowListSelection();
 
         void _onTabDragStarting(const winrt::Microsoft::UI::Xaml::Controls::TabView& sender, const winrt::Microsoft::UI::Xaml::Controls::TabViewTabDragStartingEventArgs& e);
         void _onTabStripDragOver(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::DragEventArgs& e);

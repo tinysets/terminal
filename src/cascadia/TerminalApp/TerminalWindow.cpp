@@ -628,6 +628,19 @@ namespace winrt::TerminalApp::implementation
                                                               dpi,
                                                               commandlineSize.width,
                                                               commandlineSize.height);
+
+            static constexpr auto tabShadowListWidth = 180;
+            const auto tabShadowListScaledWidth = tabShadowListWidth * scale;
+            if (proposedSize.Width > 0 && proposedSize.Height > 0)
+            {
+                const auto originalAspectRatio = proposedSize.Width / proposedSize.Height;
+                proposedSize.Width += tabShadowListScaledWidth;
+                proposedSize.Height = proposedSize.Width / originalAspectRatio;
+            }
+            else
+            {
+                proposedSize.Width += tabShadowListScaledWidth;
+            }
         }
 
         if (_contentBounds)

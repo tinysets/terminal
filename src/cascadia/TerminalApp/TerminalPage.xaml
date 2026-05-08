@@ -13,6 +13,57 @@
       Background="Transparent"
       mc:Ignorable="d">
 
+    <Page.Resources>
+        <DataTemplate x:Key="TabShadowListItemTemplate"
+                      x:DataType="local:Tab">
+            <Grid Height="32"
+                  Width="172"
+                  Padding="8,0"
+                  Background="Transparent"
+                  ContextRequested="_OnTabShadowListItemContextRequested"
+                  HorizontalAlignment="Stretch"
+                  Tag="{Binding}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="24" />
+                </Grid.ColumnDefinitions>
+
+                <IconSourceElement Grid.Column="0"
+                                   Width="16"
+                                   Height="16"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Center"
+                                   IconSource="{x:Bind mtu:IconPathConverter.IconSourceWUX(Icon), Mode=OneWay}"
+                                   Visibility="{x:Bind mtu:Converters.StringNotEmptyToVisibility(Icon), Mode=OneWay}" />
+
+                <local:TabHeaderControl Grid.Column="1"
+                                        HorizontalAlignment="Stretch"
+                                        Loaded="_OnTabShadowHeaderLoaded"
+                                        RenamerMaxWidth="1000"
+                                        Unloaded="_OnTabShadowHeaderUnloaded"
+                                        VerticalAlignment="Center"
+                                        Tag="{Binding}"
+                                        Title="{x:Bind Title, Mode=OneWay}"
+                                        TabStatus="{x:Bind TabStatus, Mode=OneWay}" />
+
+                <Button Grid.Column="2"
+                        Width="24"
+                        Height="24"
+                        Padding="0"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Close tab"
+                        BorderThickness="0"
+                        Click="_OnTabShadowListCloseButtonClick"
+                        Content="&#xE711;"
+                        FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                        FontSize="10"
+                        Tag="{Binding}"
+                        Visibility="{x:Bind mtu:Converters.InvertedBooleanToVisibility(ReadOnly), Mode=OneWay}" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
     <Grid x:Name="Root"
           Background="Transparent">
         <Grid.RowDefinitions>
@@ -56,13 +107,45 @@
             </mux:InfoBar>
         </StackPanel>
 
-        <Grid x:Name="TabContent"
+        <Grid x:Name="TabBody"
               Grid.Row="2"
               HorizontalAlignment="Stretch"
               VerticalAlignment="Stretch">
-            <Grid.Background>
-                <ImageBrush />
-            </Grid.Background>
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{ThemeResource TabViewBackground}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="0">
+                <ListView x:Name="TabShadowList"
+                          Background="Transparent"
+                          HorizontalContentAlignment="Stretch"
+                          Padding="4"
+                          ContainerContentChanging="_OnTabShadowListContainerContentChanging"
+                          ItemTemplate="{StaticResource TabShadowListItemTemplate}"
+                          SelectionMode="Single">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="MinHeight" Value="32" />
+                            <Setter Property="Padding" Value="0" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                </ListView>
+            </Border>
+
+            <Grid x:Name="TabContent"
+                  Grid.Column="1"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch">
+                <Grid.Background>
+                    <ImageBrush />
+                </Grid.Background>
+            </Grid>
         </Grid>
 
         <!--

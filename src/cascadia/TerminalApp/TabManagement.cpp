@@ -896,6 +896,7 @@ namespace winrt::TerminalApp::implementation
             p.Visibility(Visibility::Collapsed);
         }
         _UpdateTabView();
+        _SyncTabShadowListSelection();
     }
 
     void TerminalPage::_OnTabPointerPressed(const IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
@@ -1000,6 +1001,7 @@ namespace winrt::TerminalApp::implementation
             }
 
             tab.TabViewItem().StartBringIntoView();
+            _SyncTabShadowListSelection();
 
             // Raise an event that our title changed
             TitleChanged.raise(*this, nullptr);

@@ -998,7 +998,30 @@ namespace winrt::TerminalApp::implementation
     {
         ASSERT_UI_THREAD();
 
-        _headerControl.BeginRename();
+        const auto usingPendingRenameHeader = static_cast<bool>(_pendingRenameHeaderControl);
+        const auto headerControl = usingPendingRenameHeader ? _pendingRenameHeaderControl : _headerControl;
+        if (!usingPendingRenameHeader)
+        {
+            _pendingRenameHeaderControl = nullptr;
+        }
+        headerControl.BeginRename();
+    }
+
+    void Tab::SetPendingRenameHeaderControl(winrt::TerminalApp::TabHeaderControl headerControl)
+    {
+        ASSERT_UI_THREAD();
+
+        _pendingRenameHeaderControl = headerControl;
+    }
+
+    void Tab::ClearPendingRenameHeaderControl(winrt::TerminalApp::TabHeaderControl headerControl)
+    {
+        ASSERT_UI_THREAD();
+
+        if (!headerControl || _pendingRenameHeaderControl == headerControl)
+        {
+            _pendingRenameHeaderControl = nullptr;
+        }
     }
 
     // Method Description:
@@ -1776,7 +1799,9 @@ namespace winrt::TerminalApp::implementation
                 // If we're
                 // * NOT in a rename
                 // * AND (the content isn't a TermControl, OR the term control doesn't have focus in the search box)
-                if (!tab->_headerControl.InRename() &&
+                const auto tabRenamerOpen = tab->_headerControl.InRename() ||
+                                            (tab->_pendingRenameHeaderControl && tab->_pendingRenameHeaderControl.InRename());
+                if (!tabRenamerOpen &&
                     (terminalControl == nullptr || !terminalControl.SearchBoxEditInFocus()))
                 {
                     tab->RequestFocusActiveControl.raise();

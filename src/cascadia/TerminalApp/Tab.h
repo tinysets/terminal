@@ -68,6 +68,8 @@ namespace winrt::TerminalApp::implementation
         winrt::hstring GetTabText() const;
         void ResetTabText();
         void ActivateTabRenamer();
+        void SetPendingRenameHeaderControl(winrt::TerminalApp::TabHeaderControl headerControl);
+        void ClearPendingRenameHeaderControl(winrt::TerminalApp::TabHeaderControl headerControl);
 
         std::optional<winrt::Windows::UI::Color> GetTabColor();
         void SetRuntimeTabColor(const winrt::Windows::UI::Color& color);
@@ -165,6 +167,7 @@ namespace winrt::TerminalApp::implementation
         winrt::hstring _lastIconPath{};
         std::optional<winrt::Windows::UI::Color> _runtimeTabColor{};
         winrt::TerminalApp::TabHeaderControl _headerControl{};
+        winrt::TerminalApp::TabHeaderControl _pendingRenameHeaderControl{ nullptr };
         winrt::TerminalApp::TerminalTabStatus _tabStatus{};
 
         winrt::TerminalApp::ColorPickupFlyout _tabColorPickup{ nullptr };
